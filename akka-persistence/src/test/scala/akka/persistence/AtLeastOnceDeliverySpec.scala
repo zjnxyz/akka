@@ -57,6 +57,7 @@ object AtLeastOnceDeliverySpec {
           val destination = destinations(payload.take(1).toUpperCase)
           persist(AcceptedReq(payload, destination)) { evt ⇒
             updateState(evt)
+            //            Thread.sleep(10)
             sender() ! ReqAck
           }
         }
@@ -260,21 +261,21 @@ abstract class AtLeastOnceDeliverySpec(config: Config) extends AkkaSpec(config) 
         "A" -> system.actorOf(unreliableProps(2, dstA), "unreliable-a").path,
         "B" -> system.actorOf(unreliableProps(5, dstB), "unreliable-b").path,
         "C" -> system.actorOf(unreliableProps(3, dstC), "unreliable-c").path)
-      val snd = system.actorOf(senderProps(testActor, name, 2000.millis, 5, destinations), name)
+      val snd = system.actorOf(senderProps(testActor, name, 1000.millis, 5, destinations), name)
       val N = 100
       for (n ← 1 to N) {
         snd ! Req("a-" + n)
       }
-      //      for (n ← 1 to N) {
-      //        snd ! Req("b-" + n)
-      //      }
-      //      for (n ← 1 to N) {
-      //        snd ! Req("c-" + n)
-      //      }
+      for (n ← 1 to N) {
+        snd ! Req("b-" + n)
+      }
+      for (n ← 1 to N) {
+        snd ! Req("c-" + n)
+      }
       val deliverWithin = 20.seconds
       probeA.receiveN(N, deliverWithin).map { case a: Action ⇒ a.payload }.toSet should be((1 to N).map(n ⇒ "a-" + n).toSet)
-      //      probeB.receiveN(N, deliverWithin).map { case a: Action ⇒ a.payload }.toSet should be((1 to N).map(n ⇒ "b-" + n).toSet)
-      //      probeC.receiveN(N, deliverWithin).map { case a: Action ⇒ a.payload }.toSet should be((1 to N).map(n ⇒ "c-" + n).toSet)
+      probeB.receiveN(N, deliverWithin).map { case a: Action ⇒ a.payload }.toSet should be((1 to N).map(n ⇒ "b-" + n).toSet)
+      probeC.receiveN(N, deliverWithin).map { case a: Action ⇒ a.payload }.toSet should be((1 to N).map(n ⇒ "c-" + n).toSet)
     }
 
   }

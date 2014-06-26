@@ -113,8 +113,10 @@ private[persistence] trait Eventsourced extends Processor {
 
       case WriteMessageSuccess(m) ⇒
         m match {
-          case p: PersistentRepr ⇒ withCurrentPersistent(p)(p ⇒ pendingInvocations.peek().handler(p.payload))
-          case _                 ⇒ pendingInvocations.peek().handler(m.payload)
+          case p: PersistentRepr ⇒
+            println("# WriteMessageSuccess: " + p.payload)
+            withCurrentPersistent(p)(p ⇒ pendingInvocations.peek().handler(p.payload))
+          case _ ⇒ pendingInvocations.peek().handler(m.payload)
         }
         onWriteComplete()
 
@@ -126,7 +128,9 @@ private[persistence] trait Eventsourced extends Processor {
         onWriteComplete()
       case s @ WriteMessagesSuccessful ⇒ Eventsourced.super.aroundReceive(receive, s)
       case f: WriteMessagesFailed      ⇒ Eventsourced.super.aroundReceive(receive, f)
-      case other                       ⇒ processorStash.stash()
+      case other ⇒
+        println("# stash: " + other)
+        processorStash.stash()
     }
 
     private def onWriteComplete(): Unit = {
@@ -138,6 +142,8 @@ private[persistence] trait Eventsourced extends Processor {
           pendingStashingPersistInvocations -= 1
         case _ ⇒ // do nothing
       }
+
+      println("# onWriteComplete: " + pendingStashingPersistInvocations)
 
       if (pendingStashingPersistInvocations == 0) {
         currentState = processingCommands

@@ -95,6 +95,7 @@ trait Processor extends Actor with Recovery {
       case WriteMessagesSuccessful | WriteMessagesFailed(_) ⇒
         if (processorBatch.isEmpty) batching = false else journalBatch()
       case p: PersistentRepr ⇒
+        println("# PersistentRepr: " + p.payload + " ===> " + (!batching || maxBatchSizeReached))
         addToBatch(p)
         if (!batching || maxBatchSizeReached) journalBatch()
       case pb: PersistentBatch ⇒
