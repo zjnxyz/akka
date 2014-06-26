@@ -232,7 +232,7 @@ trait AtLeastOnceDelivery extends Processor {
   }
 
   private def send(deliveryId: Long, d: Delivery, timestamp: Long): Unit = {
-    context.actorSelection(d.destination) ! d.message
+    context.system.actorSelection(d.destination) ! d.message
     unconfirmed = unconfirmed.updated(deliveryId, d.copy(timestamp = timestamp, attempt = d.attempt + 1))
   }
 
