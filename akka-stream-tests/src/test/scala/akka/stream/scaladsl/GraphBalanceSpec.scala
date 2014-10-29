@@ -52,7 +52,7 @@ class GraphBalanceSpec extends AkkaSpec {
       val f5 = Sink.future[Seq[Int]]
 
       val g = FlowGraph { implicit b ⇒
-        val balance = Balance[Int]("balance")
+        val balance = Balance[Int]("balance", waitForAllDownstreams = true)
         Source(0 to 14) ~> balance
         balance ~> Flow[Int].grouped(15) ~> f1
         balance ~> Flow[Int].grouped(15) ~> f2
@@ -68,7 +68,7 @@ class GraphBalanceSpec extends AkkaSpec {
       val numElementsForSink = 10000
       val f1, f2, f3 = Sink.fold[Int, Int](0)(_ + _)
       val g = FlowGraph { implicit b ⇒
-        val balance = Balance[Int]("balance")
+        val balance = Balance[Int]("balance", waitForAllDownstreams = true)
         Source(Stream.fill(10000 * 3)(1)) ~> balance ~> f1
         balance ~> f2
         balance ~> f3

@@ -173,7 +173,7 @@ object Balance {
    * in the `FlowGraph`. This method creates a new instance every time it
    * is called and those instances are not `equal`.
    */
-  def create[T](): Balance[T] = new Balance(new scaladsl.Balance(None))
+  def create[T](): Balance[T] = new Balance(new scaladsl.Balance(None, false))
 
   /**
    * Create a new anonymous `Balance` vertex with the specified input type.
@@ -189,7 +189,7 @@ object Balance {
    * in the `FlowGraph`. Calling this method several times with the same name
    * returns instances that are `equal`.
    */
-  def create[T](name: String): Balance[T] = new Balance(new scaladsl.Balance(Some(name)))
+  def create[T](name: String): Balance[T] = new Balance(new scaladsl.Balance(Some(name), false))
 
   /**
    * Create a named `Balance` vertex with the specified input type.
