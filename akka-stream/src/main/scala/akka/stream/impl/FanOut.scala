@@ -203,6 +203,7 @@ private[akka] object FanOut {
         }
         if (marked(id) && !cancelled(id)) markedCancelled += 1
         cancelled(id) = true
+        onCancel(id)
         outputs(id).subreceive(Cancel(null))
       case SubstreamSubscribePending(id) ⇒
         if (markOutputOnSubscribe)

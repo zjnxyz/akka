@@ -1,5 +1,6 @@
 package akka.stream.scaladsl
 
+import scala.concurrent.duration._
 import scala.util.control.NoStackTrace
 import FlowGraphImplicits._
 import akka.stream.FlowMaterializer
@@ -8,13 +9,14 @@ import akka.stream.testkit.StreamTestKit.AutoPublisher
 import akka.stream.testkit.StreamTestKit.OnNext
 import akka.stream.testkit.StreamTestKit.PublisherProbe
 import akka.stream.testkit.StreamTestKit.SubscriberProbe
+import akka.actor.ActorSystem
 
 object GraphRouteSpec {
 
   /**
-   * This is fair in that sense that after dequeueing from an input it yields to other inputs if
-   * they are available. Or in other words, if all inputs have elements available at the same
-   * time then in finite steps all those elements are dequeued from them.
+   * This is fair in that sense that after enqueueing to an output it yields to other output if
+   * they are have requested elements. Or in other words, if all outputs have demand available at the same
+   * time then in finite steps all elements are enqueued to them.
    */
   class Fair[T] extends Route[T]("fairRoute") {
     import Route._
@@ -32,8 +34,8 @@ object GraphRouteSpec {
   }
 
   /**
-   * It never skips an input while cycling but waits on it instead (closed inputs are skipped though).
-   * The fair merge above is a non-strict round-robin (skips currently unavailable inputs).
+   * It never skips an output while cycling but waits on it instead (closed outputs are skipped though).
+   * The fair route above is a non-strict round-robin (skips currently unavailable outputs).
    */
   class StrictRoundRobin[T] extends Route[T]("roundRobinRoute") {
     import Route._
@@ -86,6 +88,78 @@ object GraphRouteSpec {
       // FIXME if one leg cancels it should stop
       //      override def initialCompletionHandling = eagerClose
     }
+  }
+
+  class TestRoute extends Route[String]("testRoute") {
+    import Route._
+    val output1 = createOutputPort[String]()
+    val output2 = createOutputPort[String]()
+    val output3 = createOutputPort[String]()
+
+    def createRouteLogic: RouteLogic[String] = new RouteLogic[String] {
+      val handles = Vector(output1, output2, output3)
+      override def outputHandles(outputCount: Int) = handles
+
+      override def waitForAllDownstreams: Boolean = true
+
+      override def initialState = State[String](DemandFromAny(handles)) {
+        (ctx, preferred, element) ⇒
+          if (element == "cancel")
+            ctx.cancel()
+          else if (element == "err")
+            ctx.error(new RuntimeException("err") with NoStackTrace)
+          else if (element == "complete")
+            ctx.complete()
+          else
+            ctx.emit(preferred, "onInput: " + element)
+
+          SameState
+      }
+
+      override def initialCompletionHandling = CompletionHandling(
+        onComplete = { ctx ⇒
+          handles.foreach { output =>
+            if (ctx.isDemandAvailable(output))
+              ctx.emit(output, "onComplete")
+          }
+        },
+        onError = { (ctx, cause) ⇒
+          cause match {
+            case _: IllegalArgumentException ⇒ // swallow
+            case _ ⇒
+              handles.foreach { output =>
+                if (ctx.isDemandAvailable(output))
+                  ctx.emit(output, "onError")
+              }
+          }
+        },
+        onCancel = { (ctx, cancelledOutput) =>
+          handles.foreach { output =>
+            if (output != cancelledOutput && ctx.isDemandAvailable(output))
+              ctx.emit(output, "onCancel: " + cancelledOutput.portIndex)
+          }
+          SameState
+        })
+    }
+  }
+
+  class TestFixture(implicit val system: ActorSystem, implicit val materializer: FlowMaterializer) {
+    val publisher = PublisherProbe[String]
+    val s1 = SubscriberProbe[String]
+    val s2 = SubscriberProbe[String]
+    FlowGraph { implicit b ⇒
+      val route = new TestRoute
+      Source(publisher) ~> route.in
+      route.output1 ~> Sink(s1)
+      route.output2 ~> Sink(s2)
+    }.run()
+
+    val autoPublisher = new AutoPublisher(publisher)
+    autoPublisher.sendNext("a")
+    autoPublisher.sendNext("b")
+
+    val sub1 = s1.expectSubscription()
+    val sub2 = s2.expectSubscription()
   }
 
 }
@@ -207,6 +281,108 @@ class GraphRouteSpec extends AkkaSpec {
       s1.expectComplete()
       s2.expectComplete()
     }
+
+    "support cancel of upstream" in {
+      val fixture = new TestFixture
+      import fixture._
+
+      autoPublisher.sendNext("cancel")
+
+      sub1.request(1)
+      s1.expectNext("onInput: a")
+      sub2.request(2)
+      s2.expectNext("onInput: b")
+
+      // FIXME is this expected default behavior of ctx.cancel?
+      s1.expectComplete()
+      s2.expectComplete()
+    }
+
+    "support error of outputs" in {
+      val fixture = new TestFixture
+      import fixture._
+
+      autoPublisher.sendNext("err")
+
+      sub1.request(1)
+      s1.expectNext("onInput: a")
+      sub2.request(2)
+      s2.expectNext("onInput: b")
+
+      s1.expectError().getMessage should be("err")
+      s2.expectError().getMessage should be("err")
+    }
+
+    "support error of a specific output" in pending
+
+    "handle cancel from output" in {
+      val fixture = new TestFixture
+      import fixture._
+
+      sub1.request(1)
+      s1.expectNext("onInput: a")
+      sub2.request(1)
+      s2.expectNext("onInput: b")
+
+      sub1.request(2)
+      sub2.request(2)
+      sub1.cancel()
+
+      s2.expectNext("onCancel: 0")
+      s1.expectNoMsg(200.millis)
+
+      autoPublisher.sendNext("c")
+      s2.expectNext("onInput: c")
+
+      autoPublisher.sendComplete()
+      s2.expectComplete()
+    }
+
+    "handle complete from upstream input" in {
+      val fixture = new TestFixture
+      import fixture._
+
+      sub1.request(1)
+      s1.expectNext("onInput: a")
+      sub2.request(1)
+      s2.expectNext("onInput: b")
+
+      sub1.request(2)
+      sub2.request(2)
+      autoPublisher.sendComplete()
+
+      s1.expectNext("onComplete")
+      s2.expectNext("onComplete")
+
+      s1.expectComplete()
+      s2.expectComplete()
+    }
+
+    "handle error from upstream input" in {
+      val fixture = new TestFixture
+      import fixture._
+
+      sub1.request(1)
+      s1.expectNext("onInput: a")
+      sub2.request(1)
+      s2.expectNext("onInput: b")
+
+      sub1.request(2)
+      sub2.request(2)
+      autoPublisher.sendError(new RuntimeException("test err") with NoStackTrace)
+
+      s1.expectNext("onError")
+      s2.expectNext("onError")
+
+      s1.expectError().getMessage should be("test err")
+      s2.expectError().getMessage should be("test err")
+    }
+
+    "cancel upstream input when all outputs cancelled" in pending
+
+    "cancel upstream input when all outputs completed" in pending
+
+    "cancel upstream input when all outputs errored" in pending
 
   }
 }

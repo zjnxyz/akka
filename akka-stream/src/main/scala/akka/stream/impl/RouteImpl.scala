@@ -55,7 +55,8 @@ private[akka] class RouteImpl(_settings: MaterializerSettings,
   }
 
   private val ctx: routeLogic.RouteLogicContext[Any] = new routeLogic.RouteLogicContext[Any] {
-    override def isDemandAvailable(output: OutputHandle): Boolean = outputBunch.isPending(output.portIndex)
+    override def isDemandAvailable(output: OutputHandle): Boolean =
+      (output.portIndex < outputCount) && outputBunch.isPending(output.portIndex)
 
     override def emit(output: OutputHandle, elem: Any): Unit = {
       println(s"# emit [$elem] to $output") // FIXME
