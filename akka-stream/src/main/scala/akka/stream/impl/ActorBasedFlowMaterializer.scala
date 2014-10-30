@@ -114,7 +114,11 @@ private[akka] object Ast {
   }
 
   case class FlexiMergeNode(merger: FlexiMerge[Any]) extends FanInAstNode {
-    override def name = merger.name.getOrElse("")
+    override def name = merger.name.getOrElse("flexMerge")
+  }
+
+  case class RouteNode(route: Route[Any]) extends FanOutAstNode {
+    override def name = route.name.getOrElse("route")
   }
 
 }
@@ -259,6 +263,9 @@ case class ActorBasedFlowMaterializer(override val settings: MaterializerSetting
             actorOf(Balance.props(settings, outputCount, waitForAllDownstreams).withDispatcher(settings.dispatcher), actorName)
           case Ast.Unzip ⇒
             actorOf(Unzip.props(settings).withDispatcher(settings.dispatcher), actorName)
+          case Ast.RouteNode(route) ⇒
+            actorOf(RouteImpl.props(settings, outputCount, route.createRouteLogic()).
+              withDispatcher(settings.dispatcher), actorName)
         }
 
         val publishers = Vector.tabulate(outputCount)(id ⇒ new ActorPublisher[Out](impl, equalityValue = None) {
