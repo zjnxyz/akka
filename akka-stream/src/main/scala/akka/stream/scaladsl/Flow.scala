@@ -35,34 +35,11 @@ trait Flow[-In, +Out] extends FlowOps[Out] {
    * the materialized values of the `Source` and `Sink`, e.g. the `Subscriber` of a [[SubscriberSource]] and
    * and `Publisher` of a [[PublisherSink]].
    */
-  def runWith(source: KeyedSource[In], sink: KeyedSink[Out])(implicit materializer: FlowMaterializer): (source.MaterializedType, sink.MaterializedType) = {
+  def runWith(source: Source[In], sink: Sink[Out])(implicit materializer: FlowMaterializer): (source.MaterializedType, sink.MaterializedType) = {
     val m = source.connect(this).connect(sink).run()
     (m.get(source), m.get(sink))
   }
 
-  /**
-   * Connect the `Source` to this `Flow` and then connect it to the `Sink` and run it.
-   *
-   * The returned value will contain the materialized value of the `KeyedSink`, e.g. `Publisher` of a [[PublisherSink]].
-   */
-  def runWith(source: Source[In], sink: KeyedSink[Out])(implicit materializer: FlowMaterializer): sink.MaterializedType =
-    source.connect(this).runWith(sink)
-
-  /**
-   * Connect the `Source` to this `Flow` and then connect it to the `Sink` and run it.
-   *
-   * The returned value will contain the materialized value of the `SourceWithKey`, e.g. `Subscriber` of a [[SubscriberSource]].
-   */
-  def runWith(source: KeyedSource[In], sink: Sink[Out])(implicit materializer: FlowMaterializer): source.MaterializedType =
-    source.connect(this).connect(sink).run().get(source)
-
-  /**
-   * Connect the `Source` to this `Flow` and then connect it to the `Sink` and run it.
-   *
-   * As both `Source` and `Sink` are "simple", no value is returned from this `runWith` overload.
-   */
-  def runWith(source: Source[In], sink: Sink[Out])(implicit materializer: FlowMaterializer): Unit =
-    source.connect(this).connect(sink).run()
 }
 
 object Flow {
